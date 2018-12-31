@@ -1,0 +1,23 @@
+{
+  "manifest_version": 2,
+  "name": "wiki-tracker",
+  "short_name": "wiki-tracker",
+  "description": "Track Wiki* interactions",
+  "version": "0.1",
+  "author": "austinjalexander",
+  "browser_action": {},
+  "background": {
+      "scripts": ["background.js"],
+      "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.wikipedia.org/*"],
+      "js": ["wiki-tracker.js"]
+    }
+    ],
+  "permissions": [
+    "activeTab",
+    "tabs"
+  ]
+}
