@@ -84,6 +84,46 @@ const add = async (store, obj) => {
   });
 };
 
+const put = async (store, obj) => {
+  return new Promise(resolve => {
+    const pagePutRequest = store.put(obj);
+    pagePutRequest.onerror = function(evt) {
+      throw new Error(`${CHROME_EXT_NAME} --> pagePutRequest error: ${evt.target.errorCode}`);
+    };
+    
+    pagePutRequest.onsuccess = function(evt) {
+      resolve(pagePutRequest.result);
+    };
+  });
+};
+
+const isPageUpdated = async (timestamp) => {
+  const title = CURRENT_PAGE_URL.split('/').pop();
+  return fetch(`https://en.wikipedia.org/w/index.php?title=${title}&action=history`)
+  .then((resp) => {
+    return resp.text();
+  })
+  .then((text) => {
+    const parser = new DOMParser();
+    const html = parser.parseFromString(text, 'text/html');
+    
+    const dateParts = html.querySelector('.mw-changeslist-date').innerText.split(' ');
+    const time = `${dateParts[0].replace(/,/, '')}:00`;
+    const day = dateParts[1];
+    const month = dateParts[2];
+    const year = dateParts[3];
+    
+    const updatedAt = Date.parse(`${time} ${day} ${month} ${year}`);
+    if (updatedAt > timestamp) {
+      return true;
+    }
+    return false;
+  })
+  .catch((err) => {
+    throw new Error(`${CHROME_EXT_NAME} --> fetch/parse error: ${err}`);
+  });
+};
+
 const onLoad = async () => {
   db = await openDB();
 
@@ -92,7 +132,17 @@ const onLoad = async () => {
   let page = await get(pageStoreRead, CURRENT_PAGE_URL);
   if (!page) {
     page = {};
+  } else {
+    if (page.status === PAGE_STATUS_DONE && await isPageUpdated(page.timestamp)) {
+      page.status = PAGE_STATUS_UPDATED;
+      const pageStoreWrite = await getStore(DB_STORE_NAME, 'readwrite');
+      const pageKey = await put(pageStoreWrite, page);
+      if (pageKey) {
+        console.log(`updated: ${pageKey}`)
+      }
+    }
   }
+
   chrome.runtime.sendMessage(page, (resp) => {
     console.log(resp);
   });
@@ -101,16 +151,29 @@ onLoad();
 
 const onClick = async () => {
   const pageStoreWrite = await getStore(DB_STORE_NAME, 'readwrite');
-  
-  const page = {
-    status: PAGE_STATUS_DONE,
-    url: CURRENT_PAGE_URL
-  };
-  const pageKey = await add(pageStoreWrite, page);
-  if (pageKey) {
-    chrome.runtime.sendMessage(page, (resp) => {
-      console.log(resp);
-    });
+
+  const page = await get(pageStoreWrite, CURRENT_PAGE_URL);
+  if (!page) {
+    const newPage = {
+      status: PAGE_STATUS_DONE,
+      timestamp: Date.now(),
+      url: CURRENT_PAGE_URL
+    };
+    const pageKey = await add(pageStoreWrite, newPage);
+    if (pageKey) {
+      chrome.runtime.sendMessage(newPage, (resp) => {
+        console.log(resp);
+      });
+    }
+  } else if (page.status === PAGE_STATUS_UPDATED) {
+    page.status = PAGE_STATUS_DONE;
+    page.timestamp = Date.now();
+    const pageKey = await put(pageStoreWrite, page);
+    if (pageKey) {
+      chrome.runtime.sendMessage(page, (resp) => {
+        console.log(resp);
+      });
+    }
   }
 };
 

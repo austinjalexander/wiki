@@ -27,7 +27,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onMessage.addListener((req, sender, sendResp) => {
   if (req.status) {
     console.log(req.status)
-    updateIcon('DONE');
+    updateIcon(req.status);
   } else {
     updateIcon('mediawiki');
   }
